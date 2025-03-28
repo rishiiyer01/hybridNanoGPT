@@ -198,40 +198,42 @@ class Mamba2Simple(nn.Module):
             y = self.norm(y, z)
             out = self.out_proj(y)
         return out
-
-# Test seq_idx document boundary handling
-def test_document_boundaries():
-    batch_size = 1
-    seq_len = 512
-    d_model = 256
+        
+if __name__ == "__main__":
+    # Test seq_idx document boundary handling
+    def test_document_boundaries():
+        batch_size = 1
+        seq_len = 512
+        d_model = 768
+        
+        # Create a test sequence with 2 documents
+        x = torch.randn(batch_size, seq_len, d_model, device='cuda')
+        
+        # Create a seq_idx tensor where the first 256 tokens are document 0,
+        # and the last 256 tokens are document 1
+        seq_idx = torch.zeros((batch_size, seq_len), dtype=torch.int32, device='cuda')
+        seq_idx[:, 256:] = 1
+        
+        # Initialize the model
+        model = Mamba2Simple(d_model).to('cuda')
+        
+        # Run with document boundaries
+        out_with_boundaries = model(x, seq_idx=seq_idx)
+        
+        # Run without document boundaries
+        out_without_boundaries = model(x, seq_idx=None)
+        
+        # Check if outputs differ for the second document
+        # If seq_idx is working, the second document's output should be
+        # different when processed with boundaries vs. without
+        diff = (out_with_boundaries[:, 256:] - out_without_boundaries[:, 256:]).abs().mean().item()
+        
+        print(f"Average difference in second document outputs: {diff}")
+        print(f"Document boundaries are {'respected' if diff > 1e-3 else 'not respected'}")
+        
+        # Return the model for further inspection
+        return model, out_with_boundaries, out_without_boundaries, diff
     
-    # Create a test sequence with 2 documents
-    x = torch.randn(batch_size, seq_len, d_model, device='cuda')
-    
-    # Create a seq_idx tensor where the first 256 tokens are document 0,
-    # and the last 256 tokens are document 1
-    seq_idx = torch.zeros((batch_size, seq_len), dtype=torch.int32, device='cuda')
-    seq_idx[:, 256:] = 1
-    
-    # Initialize the model
-    model = Mamba2Simple(d_model).to('cuda')
-    
-    # Run with document boundaries
-    out_with_boundaries = model(x, seq_idx=seq_idx)
-    
-    # Run without document boundaries
-    out_without_boundaries = model(x, seq_idx=None)
-    
-    # Check if outputs differ for the second document
-    # If seq_idx is working, the second document's output should be
-    # different when processed with boundaries vs. without
-    diff = (out_with_boundaries[:, 256:] - out_without_boundaries[:, 256:]).abs().mean().item()
-    
-    print(f"Average difference in second document outputs: {diff}")
-    print(f"Document boundaries are {'respected' if diff > 1e-3 else 'not respected'}")
-    
-    # Return the model for further inspection
-    return model, out_with_boundaries, out_without_boundaries, diff
-
-# Run the test
-model, out_with, out_without, diff = test_document_boundaries()
+    # Run the test
+    model, out_with, out_without, diff = test_document_boundaries()
+    #IT WORKS
