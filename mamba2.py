@@ -118,7 +118,7 @@ class Mamba2Simple(nn.Module):
         # Extra normalization layer right before output projection
         assert RMSNormGated is not None
         self.norm = RMSNormGated(self.d_inner, eps=1e-5, norm_before_gate=False, **factory_kwargs)
-
+        #self.out_norm=LayerNorm(self.d_model)
         self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=bias, **factory_kwargs)
 
     def forward(self, u, seq_idx=None):
@@ -196,7 +196,8 @@ class Mamba2Simple(nn.Module):
 
             # Multiply "gate" branch and apply extra normalization layer
             y = self.norm(y, z)
-            out = self.out_proj(y)
+            #out = self.out_norm(self.out_proj(y))
+            out=self.out_proj(y)
         return out
         
 if __name__ == "__main__":
