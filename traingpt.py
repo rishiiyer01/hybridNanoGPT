@@ -81,7 +81,7 @@ class Muon(torch.optim.Optimizer):
         assert all(isinstance(p, torch.Tensor) for p in params)
         sizes = {p.numel() for p in params}
         param_groups = [dict(params=[p for p in params if p.numel() == size],
-                             updatebuffer=[torch.empty(size, device='cuda', dtype=torch.bfloat16) for  in range(self.world_size)])
+                             updatebuffer=[torch.empty(size, device='cuda', dtype=torch.bfloat16) for _ in range(self.world_size)])
                         for size in sizes]
         super().init(param_groups, defaults)
 
@@ -223,7 +223,7 @@ class Block(nn.Module):
 class ValueEmbedding(nn.Module):
     def init(self, vocab_size, model_dim):
         super().init()
-        self.embed = nn.ModuleList([nn.Embedding(vocab_size, modeldim) for  in range(3)])
+        self.embed = nn.ModuleList([nn.Embedding(vocab_size, modeldim) for _ in range(3)])
 
     def forward(self, inputs):
         ve = [emb(inputs).bfloat16() for emb in self.embed]
@@ -461,12 +461,12 @@ def print0(s, console=False):
 
 # begin by printing this file (the Python code)
 print0(code)
-print0('='100)
+print0('='*100)
 # log information about the hardware/software environment this is running on
 print0(f'Running Python {sys.version}')
 print0(f'Running PyTorch {torch.version.version} compiled for CUDA {torch.version.cuda}')
 print0(subprocess.run(['nvidia-smi'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout)
-print0('='100)
+print0('='*100)
 
 # load data
 train_loader = DistributedDataLoader(args.train_bin)
@@ -551,7 +551,7 @@ for step in range(train_steps + 1):
         val_batch_size = world_size * micro_bs
         assert args.val_tokens % val_batch_size == 0
         val_steps = args.val_tokens // val_batchsize
-        for  in range(val_steps):
+        for _ in range(val_steps):
             with torch.no_grad():
                 inputs_val, targets_val = val_loader.next_batch(val_batch_size)
                 val_loss += ddp_model(inputs_val, targets_val, sliding_window_num_blocks)
