@@ -22,14 +22,14 @@ from mamba2 import Mamba2Simple
 # Muon optimizer
 
 @torch.compile
-def zeropower_vianewtonschulz5(G, steps):
+def zeropower_via_newtonschulz5(G, steps):
     """
     Newton-Schulz iteration to compute the zeroth power / orthogonalization of G. We opt to use a
     quintic iteration whose coefficients are selected to maximize the slope at zero. For the purpose
     of minimizing steps, it turns out to be empirically effective to keep increasing the slope at
     zero even beyond the point where the iteration no longer converges all the way to one everywhere
     on the interval. This iteration therefore does not produce UV^T but rather something like US'V^T
-    where S' is diagonal with S{ii}' ~ Uniform(0.5, 1.5), which turns out not to hurt model
+    where S' is diagonal with S_{ii}' ~ Uniform(0.5, 1.5), which turns out not to hurt model
     performance at all relative to UV^T, where USV^T = G is the SVD.
     """
     assert len(G.shape) == 2
@@ -45,7 +45,7 @@ def zeropower_vianewtonschulz5(G, steps):
         A = X @ X.T
         B = b * A + c * A @ A # adapted from suggestion by @jxbz, @leloykun, and @YouJiacheng
         X = a * X + B @ X
-
+    
     if G.size(0) > G.size(1):
         X = X.T
     return X
@@ -74,16 +74,16 @@ class Muon(torch.optim.Optimizer):
         nesterov: Whether to use Nesterov-style momentum in the internal SGD. (recommended)
         ns_steps: The number of Newton-Schulz iteration steps to use.
     """
-    def init(self, params, lr=0.02, momentum=0.95, nesterov=True, ns_steps=5):
+    def __init__(self, params, lr=0.02, momentum=0.95, nesterov=True, ns_steps=5):
         self.world_size = int(os.environ['WORLD_SIZE'])
         self.rank = int(os.environ['RANK'])
         defaults = dict(lr=lr, momentum=momentum, nesterov=nesterov, ns_steps=ns_steps)
         assert all(isinstance(p, torch.Tensor) for p in params)
         sizes = {p.numel() for p in params}
         param_groups = [dict(params=[p for p in params if p.numel() == size],
-                             updatebuffer=[torch.empty(size, device='cuda', dtype=torch.bfloat16) for _ in range(self.world_size)])
+                             update_buffer=[torch.empty(size, device='cuda', dtype=torch.bfloat16) for _ in range(self.world_size)])
                         for size in sizes]
-        super().init(param_groups, defaults)
+        super().__init__(param_groups, defaults)
 
     def step(self):
 
@@ -104,7 +104,7 @@ class Muon(torch.optim.Optimizer):
                 assert handle is not None
                 handle.wait()
                 for p_world, g_world in zip(params_world, update_buffers):
-                    pworld.data.add(
+                    p_world.data.add_(
                         g_world.view_as(p_world),
                         alpha=-lr * max(1, p_world.size(0) / p_world.size(1)) ** 0.5,
                     )
@@ -116,8 +116,8 @@ class Muon(torch.optim.Optimizer):
                     state = self.state[p]
                     if 'momentum_buffer' not in state:
                         state['momentum_buffer'] = torch.zeros_like(g)
-                    buf = state['momentumbuffer']
-                    buf.lerp(g, 1 - momentum)
+                    buf = state['momentum_buffer']
+                    buf.lerp_(g, 1 - momentum)
                     g = g.lerp_(buf, momentum) if nesterov else buf
                     g = zeropower_via_newtonschulz5(g, steps=ns_steps).flatten()
                 else:
@@ -135,16 +135,16 @@ def norm(x):
 
 class CastedLinear(nn.Linear):
 
-    def init(self, in_features, out_features):
-        super().init(in_features, out_features, bias=False)
+    def __init__(self, in_features, out_features):
+        super().__init__(in_features, out_features, bias=False)
 
     def forward(self, x):
         return F.linear(x, self.weight.type_as(x))
 
 class Rotary(nn.Module):
 
-    def init(self, dim, max_seq_len=65536):
-        super().init()
+    def __init__(self, dim, max_seq_len=65536):
+        super().__init__()
         # half-truncate RoPE by @YouJiacheng
         angular_freq = (1 / 1024) ** torch.linspace(0, 1, steps=dim//4, dtype=torch.float32)
         angular_freq = torch.cat([angular_freq, angular_freq.new_zeros(dim//4)])
@@ -162,8 +162,8 @@ class Rotary(nn.Module):
 
 class CausalSelfAttention(nn.Module):
 
-    def init(self, dim, num_heads):
-        super().init()
+    def __init__(self, dim, num_heads):
+        super().__init__()
         assert dim % num_heads == 0
         self.num_heads = num_heads
         self.c_q = CastedLinear(dim, dim)
@@ -172,7 +172,7 @@ class CausalSelfAttention(nn.Module):
         self.lambdas = nn.Parameter(torch.tensor([0.5, 0.5]))
         self.rotary = Rotary(dim // num_heads) # dim // num_heads = head_dim
         self.c_proj = CastedLinear(dim, dim)
-        self.cproj.weight.data.zero() # zero init suggested by @Grad62304977
+        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
 
     def forward(self, x, ve, block_mask):
         B, T = x.size(0), x.size(1) # batch size, sequence length
@@ -193,11 +193,11 @@ class CausalSelfAttention(nn.Module):
 
 class MLP(nn.Module):
 
-    def init(self, dim):
-        super().init()
+    def __init__(self, dim):
+        super().__init__()
         self.c_fc = CastedLinear(dim, 4 * dim)
         self.c_proj = CastedLinear(4 * dim, dim)
-        self.cproj.weight.data.zero() # zero init suggested by @Grad62304977
+        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
 
     def forward(self, x):
         x = self.c_fc(x)
@@ -207,8 +207,8 @@ class MLP(nn.Module):
 
 class Block(nn.Module):
 
-    def init(self, model_dim, num_heads, use_attn=True):
-        super().init()
+    def __init__(self, model_dim, num_heads, use_attn=True):
+        super().__init__()
         self.attn = CausalSelfAttention(model_dim, num_heads) if use_attn else None
         self.mlp = MLP(model_dim)
         self.lambdas = nn.Parameter(torch.tensor([1., 0.]))
@@ -221,9 +221,9 @@ class Block(nn.Module):
         return x
 
 class ValueEmbedding(nn.Module):
-    def init(self, vocab_size, model_dim):
-        super().init()
-        self.embed = nn.ModuleList([nn.Embedding(vocab_size, modeldim) for _ in range(3)])
+    def __init__(self, vocab_size, model_dim):
+        super().__init__()
+        self.embed = nn.ModuleList([nn.Embedding(vocab_size, model_dim) for _ in range(3)])
 
     def forward(self, inputs):
         ve = [emb(inputs).bfloat16() for emb in self.embed]
@@ -232,29 +232,15 @@ class ValueEmbedding(nn.Module):
         return ve
 
 # -----------------------------------------------------------------------------
-
-class Mamba2Block(nn.Module):
-    def init(self, model_dim):
-        super().init()
-        self.mamba = Mamba2Simple(
-            d_model=model_dim,
-            d_state=64,  # Default Mamba state dimension
-            d_conv=4,    # Default Mamba conv dimension
-            expand=2,    # Default expansion factor
-        ).to(torch.bfloat16)
-
-    def forward(self, x, seq_idx=None):
-        # x: [B, L, D]
-        return self.mamba(x, seq_idx=seq_idx)
-
 # The main GPT-2 model
+
 class GPT(nn.Module):
 
-    def init(self, vocab_size, num_layers, num_heads, model_dim):
-        super().init()
-        mamba_layers = set(range(4, 8)) #3 mamba2 blocks
+    def __init__(self, vocab_size, num_layers, num_heads, model_dim):
+        super().__init__()
+        mamba_layers = set(range(4, 8))  # 4 mamba2 blocks from indices 4-7
         self.embed = nn.Embedding(vocab_size, model_dim)
-        # skip attention of blocks.7 (the 8th layer) by @YouJiacheng
+        # Create a mix of transformer and mamba blocks
         self.blocks = nn.ModuleList()
         for i in range(num_layers):
             if i in mamba_layers:
@@ -264,13 +250,12 @@ class GPT(nn.Module):
                 # skip attention of blocks.7 (the 8th layer) by @YouJiacheng - maintain this behavior
                 use_attn = (i != 7)
                 self.blocks.append(Block(model_dim, num_heads, use_attn=use_attn))
-        #self.blocks = nn.ModuleList([Block(model_dim, num_heads, use_attn=(i != 7))
-                                     #for i in range(num_layers)])
+                
         # token value embeddings by @KoszarskyB - inspired by @Grad62304977's value residual learning
         # U-net structure on token value embeddings by @leloykun
         self.value_embeds = ValueEmbedding(vocab_size, model_dim)
         self.lm_head = CastedLinear(model_dim, vocab_size)
-        self.lmhead.weight.data.zero() # @Grad62304977
+        self.lm_head.weight.data.zero_() # @Grad62304977
         # U-net design by @brendanh0gan
         self.num_encoder_layers = num_layers // 2 # Half of the layers for encoder
         self.num_decoder_layers = num_layers - self.num_encoder_layers # Remaining for decoder
@@ -284,7 +269,6 @@ class GPT(nn.Module):
         total_num_blocks = seq_len // BLOCK_SIZE
         assert inputs.ndim == 1
         docs = (inputs == 50256).cumsum(0)
-        #print(docs.shape,docs[None, :].shape)
         docs_low = docs.view(-1, BLOCK_SIZE)[:, 0].contiguous()
         docs_high = docs.view(-1, BLOCK_SIZE)[:, -1].contiguous()
 
@@ -305,7 +289,6 @@ class GPT(nn.Module):
             causal_full_bm = q_idx > kv_idx
             window_bm = q_idx - kv_idx < sliding_window_num_blocks
             window_full_bm = window_bm # block-wise sliding window by @YouJiacheng
-            # document_bm = (docs_low[q_idx] <= docs_high[kv_idx]) & (docs_low[kv_idx] <= docs_high[q_idx])
             document_bm = (docs_low[:, None] <= docs_high) & (docs_low <= docs_high[:, None])
             document_full_bm = (docs_low[:, None] == docs_high) & (docs_low == docs_high[:, None])
             nonzero_bm = causal_bm & window_bm & document_bm
@@ -322,7 +305,7 @@ class GPT(nn.Module):
             )
 
         block_mask = create_doc_swc_block_mask(sliding_window_num_blocks)
-        seq_idx = docs[None, :].to(torch.int32).contiguous() #mamba doc mask supported in triton kernel
+        seq_idx = docs[None, :].to(torch.int32).contiguous()  # mamba doc mask supported in triton kernel
 
         x0 = norm(self.embed(inputs[None]).bfloat16()) # use of norm here by @Grad62304977
         x = x0
@@ -341,19 +324,19 @@ class GPT(nn.Module):
                 # For transformer blocks
                 x = self.blocks[i](x, ve_enc[i], x0, block_mask)
             skip_connections.append(x)
-
+        
         # Decoder pass - process the remaining blocks with weighted skip connections
         for i in range(self.num_decoder_layers):
+            # Apply skip connection - only once per layer
             x = x + self.skip_weights[i] * skip_connections.pop()
-            # Check if current block is Mamba or Transformer
+            
+            # Process the layer with the appropriate block type
             idx = self.num_encoder_layers + i
             if isinstance(self.blocks[idx], Mamba2Block):
                 # For Mamba blocks, pass the document boundaries via seq_idx
-                x = x + self.skip_weights[i] * skip_connections.pop()
                 x = self.blocks[idx](x, seq_idx)
             else:
                 # For transformer blocks
-                x = x + self.skip_weights[i] * skip_connections.pop()
                 x = self.blocks[idx](x, ve_dec[i], x0, block_mask)
 
         x = norm(x)
@@ -363,6 +346,19 @@ class GPT(nn.Module):
         loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets)
         return loss
 
+class Mamba2Block(nn.Module):
+    def __init__(self, model_dim):
+        super().__init__()
+        self.mamba = Mamba2Simple(
+            d_model=model_dim,
+            d_state=64,  # Default Mamba state dimension
+            d_conv=4,    # Default Mamba conv dimension
+            expand=2,    # Default expansion factor
+        ).to(torch.bfloat16)
+        
+    def forward(self, x, seq_idx=None):
+        # x: [B, L, D]
+        return self.mamba(x, seq_idx=seq_idx)
 # -----------------------------------------------------------------------------
 # Our own simple Distributed Data Loader
 
@@ -382,7 +378,7 @@ def _load_data_shard(path):
 
 class DistributedDataLoader:
 
-    def init(self, filename_pattern):
+    def __init__(self, filename_pattern):
         self.rank = int(os.environ['RANK'])
         self.world_size = int(os.environ['WORLD_SIZE'])
         self.files = sorted(glob.glob(filename_pattern))
@@ -417,11 +413,11 @@ class DistributedDataLoader:
 @dataclass
 class Hyperparameters:
     # data
-    train_bin = 'data/fineweb10B/finewebtrain.bin' # input .bin to train on
-    val_bin = 'data/fineweb10B/finewebval.bin' # input .bin to eval validation loss on
+    train_bin = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
+    val_bin = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
     # optimization
-    batch_size =41024 #8641024 # batch size in tokens
-    max_device_batch_size = 41024 # batch size per device in tokens
+    batch_size =16*1024 #8*64*1024 # batch size in tokens
+    max_device_batch_size = 64*1024 # batch size per device in tokens
     num_iterations = 1390 # number of iterations to run
     cooldown_frac = 0.4 # fraction of training spent cooling down the learning rate
     bf16_embeds = True
@@ -464,7 +460,7 @@ print0(code)
 print0('='*100)
 # log information about the hardware/software environment this is running on
 print0(f'Running Python {sys.version}')
-print0(f'Running PyTorch {torch.version.version} compiled for CUDA {torch.version.cuda}')
+print0(f'Running PyTorch {torch.version.__version__} compiled for CUDA {torch.version.cuda}')
 print0(subprocess.run(['nvidia-smi'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout)
 print0('='*100)
 
@@ -536,7 +532,7 @@ for step in range(train_steps + 1):
         t0 = time.perf_counter()
     timed_steps = float('nan') if step <= 11 else (step - 10) + 1 # <= 11 to avoid bug in val
 
-    sliding_window_numblocks.copy(get_sliding_window_blocks(step))
+    sliding_window_num_blocks.copy_(get_sliding_window_blocks(step))
 
     # --------------- VALIDATION SECTION -----------------
     if last_step or (args.val_loss_every > 0 and step % args.val_loss_every == 0):
@@ -550,7 +546,7 @@ for step in range(train_steps + 1):
         # calculate the number of steps to take in the val loop.
         val_batch_size = world_size * micro_bs
         assert args.val_tokens % val_batch_size == 0
-        val_steps = args.val_tokens // val_batchsize
+        val_steps = args.val_tokens // val_batch_size
         for _ in range(val_steps):
             with torch.no_grad():
                 inputs_val, targets_val = val_loader.next_batch(val_batch_size)
@@ -578,17 +574,13 @@ for step in range(train_steps + 1):
     inputs_train, targets_train = train_loader.next_batch(batch_size)
     assert len(inputs_train) <= micro_bs or len(inputs_train) % micro_bs == 0
     for micro_inputs_train, micro_targets_train in zip(inputs_train.split(micro_bs), targets_train.split(micro_bs)):
-        #ddp_model(micro_inputs_train, micro_targets_train, sliding_window_num_blocks).backward()
-        #out=ddp_model(micro_inputs_train, micro_targets_train, sliding_window_num_blocks)
-        loss = ddp_model(micro_inputs_train, micro_targets_train, sliding_window_num_blocks)
-        loss.backward()
+        ddp_model(micro_inputs_train, micro_targets_train, sliding_window_num_blocks).backward()
     # momentum warmup for Muon
     frac = min(step/300, 1)
     for group in optimizer2.param_groups:
         group['momentum'] = (1 - frac) * 0.85 + frac * 0.95
     # step the optimizers and schedulers
     for opt, sched in zip(optimizers, schedulers):
-        #torch.nn.utils.clip_gradnorm(ddp_model.parameters(), max_norm=1.0)
         opt.step()
         if step != train_steps-1:
             sched.step()
@@ -596,7 +588,7 @@ for step in range(train_steps + 1):
     model.zero_grad(set_to_none=True)
     # logging
     approx_time = training_time_ms + 1000 * (time.perf_counter() - t0)
-    print0(f'step:{step+1}/{train_steps} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f} loss: {loss}', console=True)
+    print0(f'step:{step+1}/{train_steps} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms', console=True)
 
 print0(f'peak memory consumption: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB')
 dist.destroy_process_group()
