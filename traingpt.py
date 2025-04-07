@@ -416,9 +416,9 @@ class Hyperparameters:
     train_bin = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
     val_bin = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
     # optimization
-    batch_size =16*1024 #8*64*1024 # batch size in tokens
-    max_device_batch_size = 64*1024 # batch size per device in tokens
-    num_iterations = 1390 # number of iterations to run
+    batch_size =8*40*1024 # batch size in tokens
+    max_device_batch_size = 40*1024 # batch size per device in tokens
+    num_iterations = 2200 #1390 # number of iterations to run
     cooldown_frac = 0.4 # fraction of training spent cooling down the learning rate
     bf16_embeds = True
     # evaluation and logging
@@ -493,7 +493,7 @@ optimizer1 = torch.optim.Adam([dict(params=embed_params, lr=0.6),
                                dict(params=head_params, lr=0.008),
                                dict(params=scalar_params, lr=0.04)],
                               betas=(0.8, 0.95), fused=True)
-optimizer2 = Muon(hidden_matrix_params, lr=0.05, momentum=0.95)
+optimizer2 = Muon(hidden_matrix_params, lr=0.04, momentum=0.95) #changed from 0.05 due to stability concerns
 optimizers = [optimizer1, optimizer2]
 
 # learning rate schedule: stable then decay
