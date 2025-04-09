@@ -338,7 +338,8 @@ class GPT(nn.Module):
         super().__init__()
         self.embed = nn.Embedding(vocab_size, model_dim)
         #mamba_layers = set(range(4, 8))  # 4 mamba2 blocks from indices 4-7
-        mamba_layers = set([5,6])  
+        #mamba_layers = set([5,6])  184s
+        mamba_layers=set([0,4,11])
         # token value embeddings by @KoszarskyB - inspired by @Grad62304977's value residual implementation following https://arxiv.org/abs/2410.17897
         # value embedding code simplification inspired by @ragulpr https://github.com/KellerJordan/modded-nanogpt/pull/78
         self.value_embeds = nn.ModuleList([nn.Embedding(vocab_size, model_dim) for _ in range(3)])
