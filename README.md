@@ -1,10 +1,10 @@
 # hybridNanoGPT
-testing hybrid models ((mamba2, linear attentions, BASED) + transformer) with the nanogpt objective of reaching a val_loss of 3.27 on FineWeb in the shortest possible time on 8xH100
+testing hybrid models ((mamba2, linear attentions, BASED) + transformer) with the nanogpt objective of reaching a val_loss of 3.28 on FineWeb in the shortest possible time on 8xH100
 
 See: https://github.com/KellerJordan/modded-nanogpt
 
 
-Current code achieves 3.27 in about 6 minutes. There are various optimizations needed to bridge the gap between this hybrid speedrun and the current nanoGPT WR. 
+Current code achieves 3.28 in 184.02s. There are various optimizations needed to bridge the gap between this hybrid speedrun and the current nanoGPT WR. 
 I would strongly recommend running this code on a torch build from march 11 2025
 pip install --pre torch==2.7.0.dev20250311+cu128 --index-url https://download.pytorch.org/whl/nightly/cu128 --upgrade
 
