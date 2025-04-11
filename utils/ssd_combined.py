@@ -23,6 +23,7 @@ try:
     import causal_conv1d_cuda
 except ImportError:
     causal_conv1d_fn, causal_conv1d_cuda = None, None
+from utils.custom_causal_conv1d_cuda import causal_conv1d_cuda
 
 from utils.ssd_bmm import _bmm_chunk_fwd, _bmm_chunk_bwd
 from utils.ssd_chunk_state import _chunk_cumsum_fwd, _chunk_cumsum_bwd
