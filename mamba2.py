@@ -42,7 +42,7 @@ class Mamba2Simple(nn.Module):
         conv_bias=True,
         # Fused kernel and sharding options
         chunk_size=256,
-        use_mem_eff_path=False, #added to limit causal conv kernel dependency
+        use_mem_eff_path=True, #added to limit causal conv kernel dependency
         layer_idx=None,  # Absorb kwarg for general module
         device=None,
         dtype=None,
