@@ -9,3 +9,9 @@ I would strongly recommend running this code on a torch build from march 11 2025
 pip install --pre torch==2.7.0.dev20250311+cu128 --index-url https://download.pytorch.org/whl/nightly/cu128 --upgrade
 
 Make sure to adjust the cuda version to your machine's specs, I have tested this code on both 12.6 and 12.8. The code will likely fail if you run with the latest torch nightly update, I will update the training code with the next torch stable release.
+
+
+
+
+
+To download data, run python data/fineweb.py 8 to download the first 0.8B tokens of fineweb10B
